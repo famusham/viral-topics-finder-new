@@ -1,191 +1,123 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
-import time
 
-# Configure API key through Streamlit secrets
-API_KEY = st.secrets["AIzaSyBQ8mjJS289S16LQ3IKAXyeFz_vT2ZGdNw"]
-
-# API endpoints
+# YouTube API Key
+API_KEY = "AIzaSyBQ8mjJS289S16LQ3IKAXyeFz_vT2ZGdNw"
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
 
-# Configure app title and description
-st.title("🎵 Sprunki Mod Viral Tracker")
-st.markdown("Track fan-created content and community engagement for the Sprunki Incredibox Mod")
+# Streamlit App Title
+st.title("YouTube Viral Topics Tool")
 
-# Sidebar configuration
-with st.sidebar:
-    st.header("⚙️ Search Parameters")
-    MAX_SUBSCRIBERS = st.slider("Maximum Channel Subscribers", 1000, 100000, 5000, 1000)
-    RESULTS_PER_KEYWORD = st.slider("Results per Keyword", 1, 10, 5)
-    DAYS_TO_SEARCH = st.selectbox("Search Window", [7, 14, 21, 30], index=0)
-    
-    st.markdown("---")
-    st.markdown("**Sprunki Keywords:**")
-    st.caption("Tracking these fan-created content themes:")
+# Input Fields
+days = st.number_input("Enter Days to Search (1-30):", min_value=1, max_value=30, value=5)
 
-# Curated Sprunki keywords
-DEFAULT_KEYWORDS = [
+# List of broader keywords related to Sprunki and Incredibox
+keywords = [
     "Unleash Your Sound: Sprunki – A Love Letter to Incredibox Fans",
-    "Sprunki Mod: Where Incredibox Fans Become Creators",
-    "Custom Beats, Infinite Feels: Meet the Sprunki Incredibox Mod",
-    "Sprunki – Crafted by Fans, Inspired by Incredibox Magic",
-    "Beyond the Original: Sprunki's Fan-Made Beatbox Revolution",
-    "Sprunki Mod: Remix Your Rhythm with the Incredibox Community",
-    "Fan Art Meets Music: Dive into Sprunki's Incredibox Universe",
-    "Sprunki: The Ultimate Fan-Crafted Spin on Incredibox",
-    "Join the Groove – Sprunki, By the Fans, For the Fans!",
-    "Incredibox Mod Tutorial Sprunki",
-    "Sprunki Mod Gameplay",
-    "Sprunki Beatmaking Community"
+    "sprunki", "incredibox sprunki", "sprunki mods", "best sprunki",
+    "sprunki gameplay", "sprunki tutorial", "sprunki review", "sprunki demo",
+    "sprunki music", "sprunki beats", "sprunki modding", "sprunki custom",
+    "sprunki update", "sprunki new version", "sprunki tips", "sprunki tricks",
+    "sprunki how to", "sprunki guide", "sprunki walkthrough", "sprunki latest",
+    "sprunki download", "sprunki install", "sprunki setup", "sprunki features",
+    "sprunki comparison", "sprunki vs incredibox", "sprunki community",
+    "sprunki fan made", "sprunki creations", "sprunki remix", "sprunki challenge"
 ]
 
-# Keyword management
-with st.expander("🔍 Customize Search Keywords"):
-    user_keywords = st.text_area("Add custom search terms (comma-separated):", 
-                               help="Combine specific phrases with general tags for best results")
-    keywords = DEFAULT_KEYWORDS + [k.strip() for k in user_keywords.split(",") if k.strip()]
-
-def safe_get(data, *keys, default="N/A"):
-    """Safely retrieve nested dictionary values with error handling"""
-    for key in keys:
-        try:
-            data = data[key]
-        except (KeyError, TypeError, IndexError):
-            return default
-    return data
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_youtube_data(url, params):
-    """Optimized API fetcher with cache and error handling"""
+# Fetch Data Button
+if st.button("Fetch Data"):
     try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        st.error(f"API Error: {str(e)}")
-        return None
+        # Calculate date range
+        start_date = (datetime.utcnow() - timedelta(days=int(days))).isoformat("T") + "Z"
+        all_results = []
 
-if st.button("🚀 Launch Community Scan"):
-    if not API_KEY:
-        st.error("YouTube API key not configured!")
-        st.stop()
+        # Iterate over the list of keywords
+        for keyword in keywords:
+            st.write(f"Searching for keyword: {keyword}")
 
-    start_date = (datetime.utcnow() - timedelta(days=DAYS_TO_SEARCH)).isoformat("T") + "Z"
-    results = []
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
-    for idx, keyword in enumerate(keywords):
-        try:
-            # Update progress
-            progress = (idx + 1) / len(keywords)
-            progress_bar.progress(progress)
-            status_text.markdown(f"🔎 Scanning: _{keyword}_")
-
-            # Search parameters
+            # Define search parameters
             search_params = {
                 "part": "snippet",
                 "q": keyword,
                 "type": "video",
                 "order": "viewCount",
                 "publishedAfter": start_date,
-                "maxResults": RESULTS_PER_KEYWORD,
+                "maxResults": 5,
                 "key": API_KEY,
-                "relevanceLanguage": "en",
-                "videoCategoryId": "20"  # Gaming category
             }
 
-            # Execute search
-            search_data = fetch_youtube_data(YOUTUBE_SEARCH_URL, search_params)
-            if not search_data or not search_data.get("items"):
+            # Fetch video data
+            response = requests.get(YOUTUBE_SEARCH_URL, params=search_params)
+            data = response.json()
+
+            # Check if "items" key exists
+            if "items" not in data or not data["items"]:
+                st.warning(f"No videos found for keyword: {keyword}")
                 continue
 
-            # Process results
-            video_ids = [item["id"]["videoId"] for item in search_data["items"] if item.get("id")]
-            channel_ids = [item["snippet"]["channelId"] for item in search_data["items"] if item.get("snippet")]
+            videos = data["items"]
+            video_ids = [video["id"]["videoId"] for video in videos if "id" in video and "videoId" in video["id"]]
+            channel_ids = [video["snippet"]["channelId"] for video in videos if "snippet" in video and "channelId" in video["snippet"]]
 
-            # Batch get video stats
-            video_stats = fetch_youtube_data(YOUTUBE_VIDEO_URL, {
-                "part": "statistics",
-                "id": ",".join(video_ids),
-                "key": API_KEY
-            }) or {}
+            if not video_ids or not channel_ids:
+                st.warning(f"Skipping keyword: {keyword} due to missing video/channel data.")
+                continue
 
-            # Batch get channel stats
-            channel_stats = fetch_youtube_data(YOUTUBE_CHANNEL_URL, {
-                "part": "statistics",
-                "id": ",".join(channel_ids),
-                "key": API_KEY
-            }) or {}
+            # Fetch video statistics
+            stats_params = {"part": "statistics", "id": ",".join(video_ids), "key": API_KEY}
+            stats_response = requests.get(YOUTUBE_VIDEO_URL, params=stats_params)
+            stats_data = stats_response.json()
 
-            # Create results
-            for item in search_data["items"]:
-                video_id = safe_get(item, "id", "videoId")
-                channel_id = safe_get(item, "snippet", "channelId")
-                
-                # Find matching statistics
-                video_stat = next((v for v in video_stats.get("items", []) 
-                                 if v["id"] == video_id), {})
-                channel_stat = next((c for c in channel_stats.get("items", [])
-                                   if c["id"] == channel_id), {})
+            if "items" not in stats_data or not stats_data["items"]:
+                st.warning(f"Failed to fetch video statistics for keyword: {keyword}")
+                continue
 
-                subs = int(safe_get(channel_stat, "statistics", "subscriberCount", default=0))
-                if subs > MAX_SUBSCRIBERS:
-                    continue
+            # Fetch channel statistics
+            channel_params = {"part": "statistics", "id": ",".join(channel_ids), "key": API_KEY}
+            channel_response = requests.get(YOUTUBE_CHANNEL_URL, params=channel_params)
+            channel_data = channel_response.json()
 
-                results.append({
-                    "keyword": keyword,
-                    "title": safe_get(item, "snippet", "title"),
-                    "url": f"https://youtu.be/{video_id}",
-                    "views": int(safe_get(video_stat, "statistics", "viewCount", default=0)),
-                    "likes": int(safe_get(video_stat, "statistics", "likeCount", default=0)),
-                    "comments": int(safe_get(video_stat, "statistics", "commentCount", default=0)),
-                    "channel": safe_get(item, "snippet", "channelTitle"),
-                    "subscribers": subs,
-                    "published": safe_get(item, "snippet", "publishedAt")[:10]
-                })
+            if "items" not in channel_data or not channel_data["items"]:
+                st.warning(f"Failed to fetch channel statistics for keyword: {keyword}")
+                continue
 
-            time.sleep(0.3)  # Rate limit protection
+            stats = stats_data["items"]
+            channels = channel_data["items"]
 
-        except Exception as e:
-            st.error(f"Error processing '{keyword}': {str(e)}")
-            continue
+            # Collect results
+            for video, stat, channel in zip(videos, stats, channels):
+                title = video["snippet"].get("title", "N/A")
+                description = video["snippet"].get("description", "")[:200]
+                video_url = f"https://www.youtube.com/watch?v={video['id']['videoId']}"
+                views = int(stat["statistics"].get("viewCount", 0))
+                subs = int(channel["statistics"].get("subscriberCount", 0))
 
-    # Display results
-    progress_bar.empty()
-    status_text.empty()
-    
-    if results:
-        st.success(f"🎉 Found {len(results)} Sprunki-related videos!")
-        
-        # Sort by virality score (views + likes + comments)
-        sorted_results = sorted(results, 
-                             key=lambda x: x["views"] + x["likes"]*10 + x["comments"]*20, 
-                             reverse=True)
+                if subs < 3000:  # Only include channels with fewer than 3,000 subscribers
+                    all_results.append({
+                        "Title": title,
+                        "Description": description,
+                        "URL": video_url,
+                        "Views": views,
+                        "Subscribers": subs
+                    })
 
-        # Display results grid
-        cols = st.columns(2)
-        for idx, result in enumerate(sorted_results):
-            with cols[idx % 2]:
-                with st.container(border=True):
-                    st.markdown(f"### [{result['title']}]({result['url']})")
-                    st.caption(f"**Channel:** {result['channel']} ({result['subscribers']} subs)")
-                    
-                    # Metrics row
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Views", f"{result['views']:,}")
-                    col2.metric("Likes", f"{result['likes']:,}")
-                    col3.metric("Comments", f"{result['comments']:,}")
-                    
-                    st.write(f"**Keyword Match:** `{result['keyword']}`")
-                    st.write(f"**Published:** {result['published']}")
-                    st.markdown("---")
-    else:
-        st.warning("No Sprunki-related content found. Try expanding search parameters!")
+        # Display results
+        if all_results:
+            st.success(f"Found {len(all_results)} results across all keywords!")
+            for result in all_results:
+                st.markdown(
+                    f"**Title:** {result['Title']}  \n"
+                    f"**Description:** {result['Description']}  \n"
+                    f"**URL:** [Watch Video]({result['URL']})  \n"
+                    f"**Views:** {result['Views']}  \n"
+                    f"**Subscribers:** {result['Subscribers']}"
+                )
+                st.write("---")
+        else:
+            st.warning("No results found for channels with fewer than 3,000 subscribers.")
 
-# Add footer
-st.markdown("---")
-st.markdown("**Sprunki Community Tracker** v1.1 | Track fan-created content across YouTube")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
