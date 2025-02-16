@@ -11,148 +11,130 @@ YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
 
 # Streamlit App Title
-st.title("YouTube Viral Topics Tool")
+st.title("YouTube Trending Topics Analyzer")
 
 # Input Fields
 days = st.number_input("Enter Days to Search (1-30):", min_value=1, max_value=30, value=5)
-min_views = st.number_input("Minimum Views:", min_value=0, value=1000)
-min_subscribers = st.number_input("Minimum Subscribers:", min_value=0, value=1000)
-max_videos = st.number_input("Maximum Videos on Channel:", min_value=0, value=50)
-
-# List of broader keywords related to Sprunki and Incredibox
-keywords = [
-    "Unleash Your Sound: Sprunki – A Love Letter to Incredibox Fans",
-    "sprunki", "incredibox sprunki", "sprunki mods", "best sprunki",
-    "sprunki gameplay", "sprunki tutorial", "sprunki review", "sprunki demo",
-    "sprunki music", "sprunki beats", "sprunki modding", "sprunki custom",
-    "sprunki update", "sprunki new version", "sprunki tips", "sprunki tricks",
-    "sprunki how to", "sprunki guide", "sprunki walkthrough", "sprunki latest",
-    "sprunki download", "sprunki install", "sprunki setup", "sprunki features",
-    "sprunki comparison", "sprunki vs incredibox", "sprunki community",
-    "sprunki fan made", "sprunki creations", "sprunki remix", "sprunki challenge"
-]
+min_views = st.number_input("Minimum Views:", min_value=0, value=10000)
+min_subscribers = st.number_input("Minimum Subscribers:", min_value=0, value=5000)
+max_videos = st.number_input("Maximum Videos on Channel:", min_value=0, value=100)
+results_limit = st.slider("Number of Videos to Analyze:", 100, 5000, 1000)
 
 # Function to extract trending topics and tags
 def extract_trending_topics(description):
-    # Extract hashtags and common phrases
-    hashtags = re.findall(r"#(\w+)", description)
-    words = re.findall(r"\b\w{4,}\b", description.lower())
-    return hashtags + words
+    # Clean and normalize text
+    clean_text = re.sub(r"[^\w\s#]", "", description.lower())
+    # Extract hashtags and keywords
+    hashtags = re.findall(r"#(\w+)", clean_text)
+    keywords = re.findall(r"\b\w{4,}\b", clean_text)
+    return hashtags + keywords
 
 # Fetch Data Button
-if st.button("Fetch Data"):
+if st.button("Analyze Trending Content"):
     try:
-        # Calculate date range
         start_date = (datetime.utcnow() - timedelta(days=int(days))).isoformat("T") + "Z"
         all_results = []
         trending_topics = Counter()
         trending_tags = Counter()
 
-        # Iterate over the list of keywords
-        for keyword in keywords:
-            st.write(f"Searching for keyword: {keyword}")
+        # Fetch popular videos without keyword search
+        search_params = {
+            "part": "snippet",
+            "type": "video",
+            "order": "viewCount",
+            "publishedAfter": start_date,
+            "maxResults": 50,
+            "key": API_KEY,
+            "regionCode": "US"
+        }
 
-            # Define search parameters
-            search_params = {
-                "part": "snippet",
-                "q": keyword,
-                "type": "video",
-                "order": "relevance",  # Use 'relevance' or 'date' instead of 'viewCount'
-                "publishedAfter": start_date,
-                "maxResults": 10,  # Increase to get more results
-                "key": API_KEY,
-            }
-
-            # Fetch video data
+        # Pagination to get more results
+        total_collected = 0
+        while total_collected < results_limit:
             response = requests.get(YOUTUBE_SEARCH_URL, params=search_params)
             data = response.json()
-
-            # Check if "items" key exists
-            if "items" not in data or not data["items"]:
-                st.warning(f"No videos found for keyword: {keyword}")
-                continue
-
+            
+            if "items" not in data:
+                break
+                
             videos = data["items"]
-            video_ids = [video["id"]["videoId"] for video in videos if "id" in video and "videoId" in video["id"]]
-            channel_ids = [video["snippet"]["channelId"] for video in videos if "snippet" in video and "channelId" in video["snippet"]]
-
-            if not video_ids or not channel_ids:
-                st.warning(f"Skipping keyword: {keyword} due to missing video/channel data.")
-                continue
+            video_ids = [v["id"]["videoId"] for v in videos if "id" in v]
+            channel_ids = [v["snippet"]["channelId"] for v in videos if "snippet" in v]
 
             # Fetch video statistics
-            stats_params = {"part": "statistics", "id": ",".join(video_ids), "key": API_KEY}
-            stats_response = requests.get(YOUTUBE_VIDEO_URL, params=stats_params)
+            stats_response = requests.get(YOUTUBE_VIDEO_URL, params={
+                "part": "statistics",
+                "id": ",".join(video_ids),
+                "key": API_KEY
+            })
             stats_data = stats_response.json()
 
-            if "items" not in stats_data or not stats_data["items"]:
-                st.warning(f"Failed to fetch video statistics for keyword: {keyword}")
-                continue
-
             # Fetch channel statistics
-            channel_params = {"part": "statistics,snippet", "id": ",".join(channel_ids), "key": API_KEY}
-            channel_response = requests.get(YOUTUBE_CHANNEL_URL, params=channel_params)
+            channel_response = requests.get(YOUTUBE_CHANNEL_URL, params={
+                "part": "statistics,snippet",
+                "id": ",".join(channel_ids),
+                "key": API_KEY
+            })
             channel_data = channel_response.json()
 
-            if "items" not in channel_data or not channel_data["items"]:
-                st.warning(f"Failed to fetch channel statistics for keyword: {keyword}")
-                continue
-
-            stats = stats_data["items"]
-            channels = channel_data["items"]
-
-            # Collect results
-            for video, stat, channel in zip(videos, stats, channels):
-                title = video["snippet"].get("title", "N/A")
-                description = video["snippet"].get("description", "")[:200]
-                video_url = f"https://www.youtube.com/watch?v={video['id']['videoId']}"
-                views = int(stat["statistics"].get("viewCount", 0))
-                subs = int(channel["statistics"].get("subscriberCount", 0))
-                channel_video_count = int(channel["statistics"].get("videoCount", 0))
+            # Process batch of videos
+            for video, stats, channel in zip(videos, stats_data.get("items", []), channel_data.get("items", [])):
+                # Extract video details
+                title = video["snippet"].get("title", "")
+                description = video["snippet"].get("description", "")
+                video_url = f"https://youtube.com/watch?v={video['id']['videoId']}"
+                
+                # Extract statistics
+                views = int(stats.get("statistics", {}).get("viewCount", 0))
+                subs = int(channel.get("statistics", {}).get("subscriberCount", 0))
+                channel_videos = int(channel.get("statistics", {}).get("videoCount", 0))
 
                 # Apply filters
-                if (views >= min_views and subs >= min_subscribers and channel_video_count <= max_videos):
+                if (views >= min_views and 
+                    subs >= min_subscribers and 
+                    channel_videos <= max_videos):
+                    
                     all_results.append({
                         "Title": title,
-                        "Description": description,
                         "URL": video_url,
                         "Views": views,
-                        "Subscribers": subs,
-                        "Channel Videos": channel_video_count
+                        "Subscribers": subs
                     })
 
-                    # Extract trending topics and tags
-                    topics = extract_trending_topics(description)
-                    trending_topics.update(topics)
-                    trending_tags.update(re.findall(r"#(\w+)", description))
+                    # Extract and count topics/tags
+                    topics = extract_trending_topics(f"{title} {description}")
+                    filtered_topics = [t for t in topics if "sprunki" not in t.lower()]
+                    trending_topics.update(filtered_topics)
+                    trending_tags.update([t for t in re.findall(r"#(\w+)", description) if "sprunki" not in t.lower()])
+
+            total_collected += len(videos)
+            if "nextPageToken" in data:
+                search_params["pageToken"] = data["nextPageToken"]
+            else:
+                break
 
         # Display results
-        if all_results:
-            st.success(f"Found {len(all_results)} results across all keywords!")
-            st.write("### Filtered Results:")
-            for result in all_results:
-                st.markdown(
-                    f"**Title:** {result['Title']}  \n"
-                    f"**Description:** {result['Description']}  \n"
-                    f"**URL:** [Watch Video]({result['URL']})  \n"
-                    f"**Views:** {result['Views']}  \n"
-                    f"**Subscribers:** {result['Subscribers']}  \n"
-                    f"**Channel Videos:** {result['Channel Videos']}"
-                )
-                st.write("---")
+        if trending_topics:
+            st.success(f"Analyzed {total_collected} videos. Found {len(trending_topics)} unique topics!")
+            
+            # Show trending analysis
+            st.subheader("Top Viral Topics")
+            cols = st.columns(2)
+            with cols[0]:
+                st.write("**Most Frequent Keywords:**")
+                for topic, count in trending_topics.most_common(20):
+                    st.write(f"`{topic}` ({count})")
+            
+            with cols[1]:
+                st.write("**Popular Hashtags:**")
+                for tag, count in trending_tags.most_common(20):
+                    st.write(f"`#{tag}` ({count})")
 
-            # Display trending topics and tags
-            st.write("### Trending Topics and Tags:")
-            st.write("**Top 10 Trending Topics:**")
-            for topic, count in trending_topics.most_common(10):
-                st.write(f"- {topic} (Count: {count})")
-
-            st.write("**Top 10 Trending Tags:**")
-            for tag, count in trending_tags.most_common(10):
-                st.write(f"- #{tag} (Count: {count})")
-
+            # Raw data
+            st.subheader("Raw Data Preview")
+            st.dataframe(all_results[:20])
         else:
-            st.warning("No results found based on the applied filters.")
+            st.warning("No trending topics found matching the criteria.")
 
     except Exception as e:
-        st.error(f"An error occurred: {e}")
+        st.error(f"Analysis failed: {str(e)}")
