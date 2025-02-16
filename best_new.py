@@ -21,6 +21,7 @@ max_videos = st.number_input("Maximum Videos on Channel:", min_value=0, value=50
 
 # List of broader keywords related to Sprunki and Incredibox
 keywords = [
+    "Unleash Your Sound: Sprunki – A Love Letter to Incredibox Fans",
     "sprunki", "incredibox sprunki", "sprunki mods", "best sprunki",
     "sprunki gameplay", "sprunki tutorial", "sprunki review", "sprunki demo",
     "sprunki music", "sprunki beats", "sprunki modding", "sprunki custom",
@@ -56,7 +57,7 @@ if st.button("Fetch Data"):
                 "part": "snippet",
                 "q": keyword,
                 "type": "video",
-                "order": "viewCount",
+                "order": "relevance",  # Use 'relevance' or 'date' instead of 'viewCount'
                 "publishedAfter": start_date,
                 "maxResults": 10,  # Increase to get more results
                 "key": API_KEY,
